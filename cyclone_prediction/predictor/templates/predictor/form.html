@@ -1,0 +1,1258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tropical Cyclone Prediction</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.23.9/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://unpkg.com/leaflet-image@0.4.0/leaflet-image.js"></script>
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            overflow-x: hidden;
+            min-height: 100vh;
+            position: relative;
+            transition: background 0.5s ease;
+        }
+
+        .day-theme {
+            background: linear-gradient(135deg, #87CEEB, #E0FFFF, #B0E0E6);
+            color: #1E3A8A;
+        }
+
+        .night-theme {
+            background: #0A0E1A;
+            color: #E2E8F0;
+        }
+
+        .cyclone-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .cyclone-bg::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, rgba(20, 30, 50, 0.3), rgba(10, 17, 31, 0.5));
+            opacity: 0.4;
+            animation: cloud-drift 40s infinite linear;
+            z-index: 1;
+        }
+
+        @keyframes cloud-drift {
+            0% { transform: translateX(-5%) translateY(-5%); }
+            50% { transform: translateX(5%) translateY(5%); }
+            100% { transform: translateX(-5%) translateY(-5%); }
+        }
+
+        #cyclone-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+        }
+
+        .bg-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 3;
+            pointer-events: none;
+            background: radial-gradient(circle at 50% 50%, rgba(0, 10, 20, 0.2), transparent 80%);
+            animation: cloud-pulse 20s infinite ease-in-out;
+        }
+
+        @keyframes cloud-pulse {
+            0% { opacity: 0.2; transform: scale(1); }
+            50% { opacity: 0.3; transform: scale(1.03); }
+            100% { opacity: 0.2; transform: scale(1); }
+        }
+
+        .dashboard-frame {
+            display: flex;
+            flex-direction: row;
+            gap: 2rem;
+            overflow-x: auto;
+            padding: 2rem;
+            scroll-snap-type: x mandatory;
+        }
+
+        .panel {
+            flex: 0 0 auto;
+            width: 100%;
+            max-width: 450px;
+            scroll-snap-align: start;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .panel:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4);
+        }
+
+        @media (min-width: 1024px) {
+            .dashboard-frame {
+                flex-wrap: nowrap;
+                overflow-x: visible;
+                justify-content: center;
+            }
+            .panel {
+                width: 33%;
+                max-width: 500px;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .panel {
+                max-width: 100%;
+            }
+        }
+
+        #map {
+            height: 550px;
+            border-radius: 1.5rem;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+            transition: box-shadow 0.3s ease;
+        }
+
+        #map:hover {
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.5);
+        }
+
+        @media (max-width: 1024px) {
+            #map {
+                height: 450px;
+            }
+        }
+
+        @media (max-width: 640px) {
+            #map {
+                height: 350px;
+            }
+        }
+
+        .input-container {
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .input-container:hover {
+            transform: scale(1.02);
+        }
+
+        .input-container input {
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .input-container:hover input {
+            border-color: #F472B6;
+            box-shadow: 0 0 8px rgba(244, 114, 182, 0.5);
+        }
+
+        .day-theme .panel {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(12px);
+        }
+
+        .night-theme .panel {
+            background: rgba(15, 25, 45, 0.85);
+            backdrop-filter: blur(12px);
+        }
+
+        .theme-toggle {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 1000;
+        }
+
+        .risk-circle-animate {
+            animation: risk-pulse 2s infinite ease-in-out;
+        }
+
+        @keyframes risk-pulse {
+            0% { fill-opacity: 0.2; stroke-opacity: 0.6; }
+            50% { fill-opacity: 0.4; stroke-opacity: 0.9; }
+            100% { fill-opacity: 0.2; stroke-opacity: 0.6; }
+        }
+    </style>
+</head>
+<body className="night-theme">
+    <div class="cyclone-bg">
+        <canvas id="cyclone-canvas"></canvas>
+        <div class="bg-overlay"></div>
+    </div>
+
+    <div id="root"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script type="text/babel">
+    {% verbatim %}
+        const { useState, useEffect, useRef } = React;
+
+        const getCookie = (name) => {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        };
+
+        const fetchLocationName = async (lat, lon) => {
+            try {
+                const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+                const data = await response.json();
+                return data.address.city || data.address.town || data.address.village || data.address.state || data.address.country || 'Oceanic Region';
+            } catch (error) {
+                return 'Oceanic Region';
+            }
+        };
+
+        const WindGauge = ({ speed, category, theme }) => {
+            const maxSpeed = 160;
+            const percentage = Math.min((speed / maxSpeed) * 100, 100);
+            const radius = 70;
+            const circumference = 2 * Math.PI * radius;
+            const strokeDashoffset = circumference - (percentage / 100) * circumference;
+            
+            return (
+                <div className="flex flex-col items-center justify-center p-4 bg-opacity-20 rounded-xl mb-6 transition-all duration-500 hover:scale-105">
+                    <div className="mb-4">
+                        <span className={`px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest animate-pulse ${
+                            speed > 95 ? 'bg-red-500 text-white' : 
+                            speed > 63 ? 'bg-orange-500 text-white' : 
+                            speed > 33 ? 'bg-yellow-500 text-black' : 'bg-teal-500 text-white'
+                        }`}>
+                            {speed > 95 ? 'Extreme Risk' : speed > 63 ? 'High Risk' : speed > 33 ? 'Moderate Risk' : 'Low Risk'}
+                        </span>
+                    </div>
+                    <div className="relative w-40 h-40">
+                        <svg className="w-full h-full transform -rotate-90">
+                            <circle
+                                cx="80"
+                                cy="80"
+                                r={radius}
+                                stroke="currentColor"
+                                strokeWidth="12"
+                                fill="transparent"
+                                className={theme === 'night' ? 'text-gray-700' : 'text-gray-200'}
+                            />
+                            <circle
+                                cx="80"
+                                cy="80"
+                                r={radius}
+                                stroke="url(#gaugeGradient)"
+                                strokeWidth="12"
+                                strokeDasharray={circumference}
+                                style={{ strokeDashoffset, transition: 'stroke-dashoffset 1.5s ease-in-out' }}
+                                strokeLinecap="round"
+                                fill="transparent"
+                            />
+                            <defs>
+                                <linearGradient id="gaugeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                    <stop offset="0%" stopColor="#2DD4BF" />
+                                    <stop offset="100%" stopColor="#3B82F6" />
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                            <span className={`text-3xl font-bold ${theme === 'night' ? 'text-teal-400' : 'text-blue-800'}`}>
+                                {Math.round(speed)}
+                            </span>
+                            <span className={`text-xs uppercase ${theme === 'night' ? 'text-gray-400' : 'text-blue-900'}`}>knots</span>
+                        </div>
+                    </div>
+                    <div className={`mt-4 text-center p-2 rounded-lg border ${theme === 'night' ? 'border-teal-500 bg-teal-900/20 text-teal-300' : 'border-blue-500 bg-blue-100 text-blue-800'}`}>
+                        <p className="text-sm font-bold uppercase tracking-wider">{category || 'Calculating...'}</p>
+                    </div>
+                </div>
+            );
+        };
+
+        function initCycloneBackground(theme) {
+            const canvas = document.getElementById('cyclone-canvas');
+            if (!canvas || !canvas.getContext) {
+                console.warn('Canvas not supported or not found.');
+                return;
+            }
+            const ctx = canvas.getContext('2d');
+            let w, h;
+
+            const resizeCanvas = () => {
+                w = canvas.width = window.innerWidth;
+                h = canvas.height = window.innerHeight;
+            };
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+
+            const clouds = [];
+            const numClouds = 6;
+            const rainDrops = [];
+            const maxRainDrops = 30; // Fewer drops for a subtle effect
+
+            class Cloud {
+                constructor() {
+                    this.x = Math.random() * w;
+                    this.y = Math.random() * h * 0.6;
+                    this.width = 120 + Math.random() * 100;
+                    this.height = 60 + Math.random() * 50;
+                    this.vx = (Math.random() - 0.5) * 0.8;
+                    this.vy = (Math.random() - 0.5) * 0.4;
+                    this.alpha = 0.3 + Math.random() * 0.2;
+                    this.scale = 1;
+                    this.scaleSpeed = (Math.random() - 0.5) * 0.002;
+                }
+
+                update() {
+                    this.x += this.vx;
+                    this.y += this.vy;
+                    this.scale += this.scaleSpeed;
+                    if (this.scale > 1.05 || this.scale < 0.95) this.scaleSpeed *= -1;
+                    if (this.x - this.width > w) this.x = -this.width;
+                    if (this.x + this.width < 0) this.x = w + this.width;
+                    if (this.y - this.height > h * 0.6) this.y = -this.height;
+                    if (this.y + this.height < 0) this.y = h * 0.6 + this.height;
+                }
+
+                draw() {
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    ctx.scale(this.scale, this.scale * 0.7);
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, this.width, this.height, 0, 0, Math.PI * 2);
+                    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, this.width);
+                    gradient.addColorStop(0, `rgba(${theme === 'night' ? '60, 70, 90' : '200, 210, 220'}, ${this.alpha})`);
+                    gradient.addColorStop(1, `rgba(${theme === 'night' ? '30, 40, 60' : '150, 160, 170'}, 0)`);
+                    ctx.fillStyle = gradient;
+                    ctx.fill();
+                    ctx.restore();
+                }
+            }
+
+            class RainDrop {
+                constructor() {
+                    this.x = Math.random() * w;
+                    this.y = -10;
+                    this.vy = 2 + Math.random() * 2; // Slow falling speed
+                    this.length = 8 + Math.random() * 4;
+                    this.alpha = 0.5 + Math.random() * 0.3;
+                }
+
+                update() {
+                    this.y += this.vy;
+                    this.alpha -= 0.005; // Gentle fade
+                    if (this.y > h || this.alpha <= 0) {
+                        this.x = Math.random() * w;
+                        this.y = -10;
+                        this.vy = 2 + Math.random() * 2;
+                        this.alpha = 0.5 + Math.random() * 0.3;
+                    }
+                }
+
+                draw() {
+                    ctx.beginPath();
+                    ctx.moveTo(this.x, this.y);
+                    ctx.lineTo(this.x, this.y + this.length);
+                    ctx.strokeStyle = `rgba(${theme === 'night' ? '180, 200, 220' : '30, 58, 138'}, ${this.alpha})`;
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
+            }
+
+            for (let i = 0; i < numClouds; i++) {
+                clouds.push(new Cloud());
+            }
+
+            for (let i = 0; i < maxRainDrops; i++) {
+                rainDrops.push(new RainDrop());
+            }
+
+            function animate() {
+                ctx.clearRect(0, 0, w, h);
+                clouds.forEach(cloud => {
+                    cloud.update();
+                    cloud.draw();
+                });
+                rainDrops.forEach(drop => {
+                    drop.update();
+                    drop.draw();
+                });
+                requestAnimationFrame(animate);
+            }
+
+            animate();
+        }
+
+        const CycloneDashboard = () => {
+            const [inputs, setInputs] = useState({
+                international_number_id: '',
+                tropical_cyclone_number: '',
+                tropical_cyclone_end_record: '',
+                number_of_hours: '',
+                grade: '',
+                latitude: '',
+                longitude: '',
+                minimum_central_pressure: ''
+            });
+            const [error, setError] = useState('');
+            const [prediction, setPrediction] = useState('');
+            const [category, setCategory] = useState('');
+            const [currentWindSpeed, setCurrentWindSpeed] = useState(0);
+            const [locationName, setLocationName] = useState('');
+            const [isLoading, setIsLoading] = useState(false);
+            const [history, setHistory] = useState(JSON.parse(localStorage.getItem('cyclonePredictions') || '[]'));
+            const [theme, setTheme] = useState('night');
+            const mapRef = useRef(null);
+            const mapInstanceRef = useRef(null);
+            const windSpeedChartRef = useRef(null);
+            const pressureChartRef = useRef(null);
+            const markersRef = useRef([]);
+            const riskCirclesRef = useRef([]);
+            const forecastMarkersRef = useRef([]);
+            const polylineRef = useRef(null);
+            const forecastPolylineRef = useRef(null);
+            const animationIntervalRef = useRef(null);
+            const [mapLayer, setMapLayer] = useState('street');
+            const [coords, setCoords] = useState('Center: 0, 0');
+            const [pathDistance, setPathDistance] = useState('Total Path Distance: 0 km');
+            const [cycloneInfo, setCycloneInfo] = useState({ display: false, windSpeed: 'N/A', pressure: 'N/A', category: 'N/A', location: 'N/A' });
+            const [showRiskZones, setShowRiskZones] = useState(true);
+            const [showForecast, setShowForecast] = useState(true);
+            const [forecastData, setForecastData] = useState([]);
+
+            useEffect(() => {
+                document.body.className = theme === 'night' ? 'night-theme' : 'day-theme';
+                initCycloneBackground(theme);
+
+                if (!mapInstanceRef.current && mapRef.current) {
+                    mapInstanceRef.current = L.map(mapRef.current, { zoomControl: true, preferCanvas: true }).setView([20, 80], 4);
+                    L.control.scale().addTo(mapInstanceRef.current);
+                    changeMapLayer(mapLayer);
+                    mapInstanceRef.current.on('move', () => {
+                        const center = mapInstanceRef.current.getCenter();
+                        setCoords(`Center: ${center.lat.toFixed(2)}, ${center.lng.toFixed(2)}`);
+                    });
+                }
+                
+                loadHistory();
+                setTimeout(() => initializeCharts(), 500);
+
+                return () => {
+                    if (animationIntervalRef.current) clearInterval(animationIntervalRef.current);
+                };
+            }, [theme]);
+
+            const getRiskColor = (speed) => {
+                if (speed < 34) return '#2DD4BF'; 
+                if (speed < 64) return '#FACC15'; 
+                if (speed < 96) return '#FB923C'; 
+                return '#EF4444'; 
+            };
+
+            const toggleTheme = () => {
+                setTheme(theme === 'night' ? 'day' : 'night');
+            };
+
+            const changeMapLayer = (layer) => {
+                if (mapLayer === layer) return;
+                const map = mapInstanceRef.current;
+                map.eachLayer(layer => {
+                    if (layer instanceof L.TileLayer) map.removeLayer(layer);
+                });
+
+                if (layer === 'street') {
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
+                } else if (layer === 'satellite') {
+                    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: '© Esri' }).addTo(map);
+                } else if (layer === 'terrain') {
+                    L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { attribution: '© OpenTopoMap' }).addTo(map);
+                }
+
+                setMapLayer(layer);
+                markersRef.current.forEach(marker => marker.addTo(map));
+                if (polylineRef.current) polylineRef.current.addTo(map);
+            };
+
+            const zoomToLatestCyclone = () => {
+                if (markersRef.current.length > 0) {
+                    const latestMarker = markersRef.current[markersRef.current.length - 1];
+                    mapInstanceRef.current.setView(latestMarker.getLatLng(), 5);
+                }
+            };
+
+            const animateCyclonePath = () => {
+                if (animationIntervalRef.current) {
+                    clearInterval(animationIntervalRef.current);
+                    animationIntervalRef.current = null;
+                    const animateButton = document.querySelector('button[onClick="animateCyclonePath()"]');
+                    if (animateButton) animateButton.textContent = 'Animate Path';
+                    markersRef.current.forEach(marker => marker.addTo(mapInstanceRef.current));
+                    if (polylineRef.current) polylineRef.current.addTo(mapInstanceRef.current);
+                    return;
+                }
+
+                if (markersRef.current.length < 2) {
+                    alert('At least two cyclone points are needed to animate the path.');
+                    return;
+                }
+
+                const animateButton = document.querySelector('button[onClick="animateCyclonePath()"]');
+                if (animateButton) animateButton.textContent = 'Stop Animation';
+                markersRef.current.forEach(marker => mapInstanceRef.current.removeLayer(marker));
+                if (polylineRef.current) mapInstanceRef.current.removeLayer(polylineRef.current);
+
+                let index = 0;
+                const animate = () => {
+                    if (index >= markersRef.current.length) index = 0;
+                    const marker = markersRef.current[index];
+                    mapInstanceRef.current.setView(marker.getLatLng(), 5);
+                    const tempMarker = L.marker(marker.getLatLng()).addTo(mapInstanceRef.current)
+                        .bindPopup(marker.getPopup().getContent()).openPopup();
+                    setTimeout(() => mapInstanceRef.current.removeLayer(tempMarker), 1000);
+                    index++;
+                };
+
+                animate();
+                animationIntervalRef.current = setInterval(animate, 1500);
+            };
+
+            const calculatePathDistance = () => {
+                let totalDistance = 0;
+                for (let i = 1; i < markersRef.current.length; i++) {
+                    totalDistance += markersRef.current[i-1].getLatLng().distanceTo(markersRef.current[i].getLatLng()) / 1000;
+                }
+                setPathDistance(`Total Path Distance: ${totalDistance.toFixed(2)} km`);
+            };
+
+            const initializeCharts = (forReport = false) => {
+                const windCanvas = document.getElementById('windSpeedChart');
+                const pressureCanvas = document.getElementById('pressureChart');
+                
+                if (!windCanvas || !pressureCanvas) return;
+                
+                if (windSpeedChartRef.current) windSpeedChartRef.current.destroy();
+                if (pressureChartRef.current) pressureChartRef.current.destroy();
+
+                const labels = history.map((_, index) => `P${index + 1}`);
+                const windSpeeds = history.map(entry => entry.predictedWindSpeed);
+                const pressures = history.map(entry => entry.minimum_central_pressure);
+                
+                // For report, always use light theme colors for clarity
+                const chartColors = (theme === 'night' && !forReport) ? {
+                    borderColor: '#5EEAD4',
+                    backgroundColor: 'rgba(94, 234, 212, 0.2)',
+                    textColor: '#E2E8F0'
+                } : {
+                    borderColor: '#1E3A8A',
+                    backgroundColor: 'rgba(30, 58, 138, 0.2)',
+                    textColor: '#1E3A8A'
+                };
+
+                const commonOptions = {
+                    responsive: true,
+                    devicePixelRatio: 3, // High resolution for report
+                    plugins: { 
+                        legend: { display: true, labels: { color: chartColors.textColor, font: { weight: 'bold' } } } 
+                    },
+                    scales: {
+                        y: { 
+                            beginAtZero: false, 
+                            grid: { color: forReport ? '#E2E8F0' : 'rgba(255,255,255,0.1)' },
+                            ticks: { color: chartColors.textColor } 
+                        },
+                        x: { 
+                            grid: { display: false },
+                            ticks: { color: chartColors.textColor } 
+                        }
+                    }
+                };
+
+                windSpeedChartRef.current = new Chart(windCanvas, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Wind Speed (knots)',
+                            data: windSpeeds,
+                            borderColor: chartColors.borderColor,
+                            backgroundColor: chartColors.backgroundColor,
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 5,
+                            pointBackgroundColor: chartColors.borderColor
+                        }]
+                    },
+                    options: commonOptions
+                });
+
+                pressureChartRef.current = new Chart(pressureCanvas, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Pressure (hPa)',
+                            data: pressures,
+                            backgroundColor: chartColors.backgroundColor.replace('0.2', '0.6'),
+                            borderColor: chartColors.borderColor,
+                            borderWidth: 2
+                        }]
+                    },
+                    options: commonOptions
+                });
+            };
+
+            const toggleRiskZones = () => {
+                const newShow = !showRiskZones;
+                setShowRiskZones(newShow);
+                riskCirclesRef.current.forEach(circle => {
+                    if (!newShow) mapInstanceRef.current.removeLayer(circle);
+                    else circle.addTo(mapInstanceRef.current);
+                });
+            };
+
+            const toggleForecast = () => {
+                const newShow = !showForecast;
+                setShowForecast(newShow);
+                forecastMarkersRef.current.forEach(m => {
+                    if (!newShow) mapInstanceRef.current.removeLayer(m);
+                    else m.addTo(mapInstanceRef.current);
+                });
+                if (forecastPolylineRef.current) {
+                    if (!newShow) mapInstanceRef.current.removeLayer(forecastPolylineRef.current);
+                    else forecastPolylineRef.current.addTo(mapInstanceRef.current);
+                }
+            };
+
+            const updateForecastMap = (forecasts) => {
+                // Clear existing
+                forecastMarkersRef.current.forEach(m => mapInstanceRef.current.removeLayer(m));
+                if (forecastPolylineRef.current) mapInstanceRef.current.removeLayer(forecastPolylineRef.current);
+                forecastMarkersRef.current = [];
+
+                if (!forecasts || forecasts.length === 0) return;
+
+                const forecastColor = '#F472B6'; // Pink for forecast
+                const lastPoint = markersRef.current[markersRef.current.length - 1].getLatLng();
+                const latlngs = [lastPoint];
+
+                forecasts.forEach(f => {
+                    const latlng = [f.latitude, f.longitude];
+                    latlngs.push(latlng);
+                    
+                    const marker = L.circleMarker(latlng, {
+                        radius: 6,
+                        color: forecastColor,
+                        fillColor: forecastColor,
+                        fillOpacity: 0.8
+                    }).bindPopup(`<b>Forecast: +${f.hours}h</b><br>Lat: ${f.latitude}<br>Lon: ${f.longitude}`);
+                    
+                    if (showForecast) marker.addTo(mapInstanceRef.current);
+                    forecastMarkersRef.current.push(marker);
+                });
+
+                forecastPolylineRef.current = L.polyline(latlngs, {
+                    color: forecastColor,
+                    weight: 3,
+                    dashArray: '5, 10',
+                    opacity: 0.7
+                });
+                
+                if (showForecast) forecastPolylineRef.current.addTo(mapInstanceRef.current);
+            };
+
+            const updateMap = (lat, lon, entry) => {
+                const marker = L.marker([lat, lon]).addTo(mapInstanceRef.current)
+                    .bindPopup(`
+                        <div class="p-1">
+                            <b class="text-blue-800">Cyclone Point</b><br>
+                            Wind: ${entry.predictedWindSpeed} knots<br>
+                            Category: ${entry.category || 'N/A'}
+                        </div>
+                    `);
+                
+                // Add Risk Circle
+                const riskRadius = (entry.predictedWindSpeed / 10) * 15000; 
+                const riskCircle = L.circle([lat, lon], {
+                    radius: riskRadius,
+                    color: getRiskColor(entry.predictedWindSpeed),
+                    weight: 2,
+                    opacity: 0.6,
+                    fillColor: getRiskColor(entry.predictedWindSpeed),
+                    fillOpacity: 0.2
+                });
+                
+                if (showRiskZones) riskCircle.addTo(mapInstanceRef.current);
+                riskCirclesRef.current.push(riskCircle);
+
+                marker.on('click', () => {
+                    setCycloneInfo({
+                        display: true,
+                        windSpeed: `${entry.predictedWindSpeed} knots`,
+                        pressure: `${entry.minimum_central_pressure} hPa`,
+                        category: `${entry.category || 'N/A'}`,
+                        location: `${lat}, ${lon} (${entry.locationName || 'Oceanic'})`
+                    });
+                });
+                markersRef.current.push(marker);
+                mapInstanceRef.current.setView([lat, lon], 5);
+
+                if (polylineRef.current) mapInstanceRef.current.removeLayer(polylineRef.current);
+                const latlngs = markersRef.current.map(m => m.getLatLng());
+                polylineRef.current = L.polyline(latlngs, { 
+                    color: theme === 'night' ? '#5EEAD4' : '#1E3A8A', 
+                    weight: 4,
+                    dashArray: '10, 10'
+                }).addTo(mapInstanceRef.current);
+                calculatePathDistance();
+            };
+
+            const loadHistory = () => {
+                const historyData = JSON.parse(localStorage.getItem('cyclonePredictions') || '[]');
+                setHistory(historyData);
+                
+                if (mapInstanceRef.current) {
+                    markersRef.current.forEach(marker => mapInstanceRef.current.removeLayer(marker));
+                    riskCirclesRef.current.forEach(circle => mapInstanceRef.current.removeLayer(circle));
+                    if (polylineRef.current) mapInstanceRef.current.removeLayer(polylineRef.current);
+                }
+                
+                markersRef.current = [];
+                riskCirclesRef.current = [];
+                polylineRef.current = null;
+
+                historyData.forEach(entry => updateMap(entry.latitude, entry.longitude, entry));
+                setTimeout(() => initializeCharts(), 500);
+                calculatePathDistance();
+            };
+
+            const resetAll = () => {
+                setInputs({
+                    international_number_id: '',
+                    tropical_cyclone_number: '',
+                    tropical_cyclone_end_record: '',
+                    number_of_hours: '',
+                    grade: '',
+                    latitude: '',
+                    longitude: '',
+                    minimum_central_pressure: ''
+                });
+                setError('');
+                setPrediction('');
+                setCategory('');
+                setForecastData([]);
+                setCurrentWindSpeed(0);
+                setLocationName('');
+                setCycloneInfo({ display: false, windSpeed: 'N/A', pressure: 'N/A', category: 'N/A', location: 'N/A' });
+                
+                if (mapInstanceRef.current) {
+                    markersRef.current.forEach(marker => mapInstanceRef.current.removeLayer(marker));
+                    riskCirclesRef.current.forEach(circle => mapInstanceRef.current.removeLayer(circle));
+                    forecastMarkersRef.current.forEach(m => mapInstanceRef.current.removeLayer(m));
+                    if (polylineRef.current) mapInstanceRef.current.removeLayer(polylineRef.current);
+                    if (forecastPolylineRef.current) mapInstanceRef.current.removeLayer(forecastPolylineRef.current);
+                    mapInstanceRef.current.setView([20, 80], 4);
+                }
+                
+                markersRef.current = [];
+                riskCirclesRef.current = [];
+                forecastMarkersRef.current = [];
+                polylineRef.current = null;
+                forecastPolylineRef.current = null;
+                
+                setCoords('Center: 0, 0');
+                setPathDistance('Total Path Distance: 0 km');
+                
+                if (animationIntervalRef.current) {
+                    clearInterval(animationIntervalRef.current);
+                    animationIntervalRef.current = null;
+                }
+                
+                localStorage.removeItem('cyclonePredictions');
+                setHistory([]);
+                initializeCharts();
+            };
+
+            const predict = async () => {
+                const parsedInputs = {};
+                for (let key in inputs) {
+                    parsedInputs[key] = parseFloat(inputs[key]);
+                    if (isNaN(parsedInputs[key])) {
+                        setError('Please fill all fields with valid numbers.');
+                        setPrediction('');
+                        return;
+                    }
+                }
+                if (parsedInputs.latitude < -90 || parsedInputs.latitude > 90) {
+                    setError('Latitude must be between -90 and 90.');
+                    setPrediction('');
+                    return;
+                }
+                if (parsedInputs.longitude < -180 || parsedInputs.longitude > 180) {
+                    setError('Longitude must be between -180 and 180.');
+                    setPrediction('');
+                    return;
+                }
+                if (parsedInputs.minimum_central_pressure <= 0) {
+                    setError('Minimum central pressure must be positive.');
+                    setPrediction('');
+                    return;
+                }
+
+                setError('');
+                setIsLoading(true);
+                
+                try {
+                    const response = await fetch('', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'X-CSRFToken': getCookie('csrftoken')
+                        },
+                        body: JSON.stringify({ ...parsedInputs, history: history })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.error) {
+                        setError(data.error);
+                        setIsLoading(false);
+                        return;
+                    }
+
+                    const predictedWindSpeed = data.prediction;
+                    const cycloneCategory = data.category;
+                    const forecastedPoints = data.forecasts;
+                    const locName = await fetchLocationName(parsedInputs.latitude, parsedInputs.longitude);
+
+                    setCurrentWindSpeed(predictedWindSpeed);
+                    setCategory(cycloneCategory);
+                    setLocationName(locName);
+                    setForecastData(forecastedPoints);
+                    setPrediction(`Predicted Wind Speed: ${predictedWindSpeed} knots`);
+                    
+                    const newHistory = [...history, { ...parsedInputs, predictedWindSpeed, category: cycloneCategory, locationName: locName }];
+                    setHistory(newHistory);
+                    localStorage.setItem('cyclonePredictions', JSON.stringify(newHistory));
+                    updateMap(parsedInputs.latitude, parsedInputs.longitude, { ...parsedInputs, predictedWindSpeed, category: cycloneCategory });
+                    updateForecastMap(forecastedPoints);
+                    initializeCharts();
+                } catch (err) {
+                    setError('Failed to connect to the prediction server.');
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const downloadReport = async () => {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF('p', 'mm', 'a4');
+                const pageWidth = doc.internal.pageSize.getWidth();
+                const pageHeight = doc.internal.pageSize.getHeight();
+                
+                if (history.length === 0) {
+                    alert('No prediction data available. Please make a prediction first.');
+                    return;
+                }
+
+                setIsLoading(true);
+
+                const addHeader = (title) => {
+                    doc.setFillColor(30, 58, 138); 
+                    doc.rect(0, 0, pageWidth, 40, 'F');
+                    doc.setTextColor(255, 255, 255);
+                    doc.setFontSize(22);
+                    doc.setFont("helvetica", "bold");
+                    doc.text(title, pageWidth / 2, 25, { align: 'center' });
+                    doc.setFontSize(10);
+                    doc.setFont("helvetica", "normal");
+                    doc.text(`Generated: ${new Date().toLocaleString()}`, pageWidth - 15, 35, { align: 'right' });
+                };
+
+                const addFooter = () => {
+                    const totalPages = doc.internal.getNumberOfPages();
+                    for (let i = 1; i <= totalPages; i++) {
+                        doc.setPage(i);
+                        doc.setFillColor(248, 250, 252);
+                        doc.rect(0, pageHeight - 15, pageWidth, 15, 'F');
+                        doc.setTextColor(100, 116, 139);
+                        doc.setFontSize(8);
+                        doc.text('© 2026 Cyclone Prediction Project | Professional Analysis', pageWidth / 2, pageHeight - 7, { align: 'center' });
+                        doc.text(`Page ${i} of ${totalPages}`, pageWidth - 15, pageHeight - 7, { align: 'right' });
+                    }
+                };
+
+                try {
+                    // Step 1: Switch to light charts for export
+                    initializeCharts(true);
+                    await new Promise(r => setTimeout(r, 500)); // Wait for render
+
+                    addHeader('CYCLONE ANALYSIS REPORT');
+                    
+                    // Executive Summary
+                    doc.setTextColor(30, 58, 138);
+                    doc.setFontSize(16);
+                    doc.setFont("helvetica", "bold");
+                    doc.text('1. Executive Summary', 20, 55);
+                    
+                    doc.setTextColor(51, 65, 85);
+                    doc.setFontSize(11);
+                    doc.setFont("helvetica", "normal");
+                    const latest = history[history.length - 1];
+                    const summary = `Current tracking session contains ${history.length} observation points. The latest peak wind speed is ${latest.predictedWindSpeed.toFixed(1)} knots (${latest.category || 'N/A'}), observed at ${latest.locationName || 'the Open Ocean'}. Total path distance: ${pathDistance.split(': ')[1]}.`;
+                    doc.text(doc.splitTextToSize(summary, pageWidth - 40), 20, 65);
+
+                    // Data Table
+                    doc.setTextColor(30, 58, 138);
+                    doc.setFontSize(16);
+                    doc.setFont("helvetica", "bold");
+                    doc.text('2. Observation Logs', 20, 95);
+                    
+                    const tableData = history.map((e, i) => [
+                        i + 1, e.predictedWindSpeed.toFixed(1), e.category || 'N/A', 
+                        e.minimum_central_pressure.toFixed(1), e.locationName || 'N/A',
+                        `${e.latitude.toFixed(2)}, ${e.longitude.toFixed(2)}`
+                    ]);
+
+                    doc.autoTable({
+                        startY: 100,
+                        head: [['#', 'Wind (kts)', 'Category', 'Pressure', 'Location', 'Coords']],
+                        body: tableData,
+                        theme: 'striped',
+                        headStyles: { fillColor: [30, 58, 138], textColor: 255 },
+                        margin: { left: 20, right: 20 }
+                    });
+
+                    // Forecast Path Section
+                    if (forecastData && forecastData.length > 0) {
+                        let fY = doc.lastAutoTable.finalY + 15;
+                        if (fY > pageHeight - 50) { doc.addPage(); addHeader('FORECAST ANALYSIS'); fY = 55; }
+                        
+                        doc.setTextColor(219, 39, 119); // Pink-600
+                        doc.setFontSize(16);
+                        doc.setFont("helvetica", "bold");
+                        doc.text('3. Forecast Path Analysis (Seq2Seq)', 20, fY);
+                        
+                        const forecastTable = forecastData.map(f => [`+${f.hours}h`, f.latitude.toFixed(2), f.longitude.toFixed(2), 'Predicted Path']);
+                        doc.autoTable({
+                            startY: fY + 5,
+                            head: [['Time Interval', 'Latitude', 'Longitude', 'Model Status']],
+                            body: forecastTable,
+                            theme: 'grid',
+                            headStyles: { fillColor: [219, 39, 119], textColor: 255 },
+                            margin: { left: 20, right: 20 }
+                        });
+                    }
+
+                    // Visualizations
+                    doc.addPage();
+                    addHeader('DATA VISUALIZATIONS');
+                    
+                    let y = 55;
+                    doc.setTextColor(30, 58, 138);
+                    doc.setFontSize(16);
+                    doc.setFont("helvetica", "bold");
+                    doc.text('4. Observation Analytics', 20, y);
+                    y += 10;
+                    const charts = [
+                        { id: 'windSpeedChart', title: 'Wind Speed Intensity Trend' },
+                        { id: 'pressureChart', title: 'Central Pressure Distribution' }
+                    ];
+
+                    for (const chart of charts) {
+                        try {
+                            const canvas = document.getElementById(chart.id);
+                            const img = canvas.toDataURL('image/png', 1.0);
+                            doc.setTextColor(30, 58, 138);
+                            doc.setFontSize(14);
+                            doc.text(chart.title, 20, y);
+                            doc.addImage(img, 'PNG', 20, y + 5, pageWidth - 40, 75);
+                            y += 100;
+                        } catch (e) { console.error(`Failed chart ${chart.id}`); }
+                    }
+
+                    // Map Section
+                    doc.addPage();
+                    addHeader('GEOSPATIAL TRACKING');
+                    
+                    doc.setTextColor(30, 58, 138);
+                    doc.setFontSize(16);
+                    doc.text('3. Path and Risk Analysis', 20, 55);
+
+                    try {
+                        const mapImg = await new Promise((resolve, reject) => {
+                            setTimeout(() => {
+                                leafletImage(mapInstanceRef.current, (err, canvas) => {
+                                    if (err) reject(err);
+                                    else resolve(canvas.toDataURL('image/png', 1.0));
+                                });
+                            }, 1000);
+                        });
+                        doc.setDrawColor(30, 58, 138);
+                        doc.rect(19, 64, pageWidth - 38, 112);
+                        doc.addImage(mapImg, 'PNG', 20, 65, pageWidth - 40, 110);
+                        doc.setFontSize(10);
+                        doc.setTextColor(100, 116, 139);
+                        doc.text('Visual representation of cyclone track and impact risk zones.', pageWidth/2, 182, { align: 'center' });
+                    } catch (e) {
+                        doc.setTextColor(239, 68, 68);
+                        doc.text('Geospatial visualization unavailable in PDF export.', 20, 70);
+                    }
+
+                    addFooter();
+                    doc.save(`Cyclone_Analysis_${new Date().getTime()}.pdf`);
+                    
+                    // Restore original theme
+                    setTimeout(() => initializeCharts(), 500);
+                } catch (err) {
+                    console.error('PDF Error:', err);
+                    alert('Error generating professional report.');
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const handleInputChange = (e) => {
+                setInputs({ ...inputs, [e.target.name]: e.target.value });
+            };
+
+            return (
+                <div className="relative min-h-screen">
+                    <button
+                        onClick={toggleTheme}
+                        className="theme-toggle bg-gradient-to-r from-teal-400 to-blue-500 hover:from-blue-500 hover:to-teal-400 text-white p-3 rounded-full shadow-lg transition-all duration-300"
+                        title={theme === 'night' ? 'Switch to Day Mode' : 'Switch to Night Mode'}
+                    >
+                        {theme === 'night' ? (
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                            </svg>
+                        ) : (
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"></path>
+                            </svg>
+                        )}
+                    </button>
+                    <div className="container mx-auto p-6">
+                        <div className="flex items-center justify-center mb-8">
+                            <svg className="w-12 h-12 text-teal-400 mr-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                            </svg>
+                            <h1 className={`text-4xl font-bold text-center ${theme === 'night' ? 'text-teal-400' : 'text-blue-800'} drop-shadow-lg`}>
+                                Tropical Cyclone Dashboard
+                            </h1>
+                        </div>
+                        <div className="dashboard-frame">
+                            <div className="panel p-8 rounded-2xl shadow-2xl">
+                                <div className="flex items-center mb-6">
+                                    <svg className="w-8 h-8 text-teal-400 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                    </svg>
+                                    <h2 className={`text-2xl font-semibold ${theme === 'night' ? 'text-teal-400' : 'text-blue-800'}`}>Input Parameters</h2>
+                                </div>
+                                {[
+                                    { id: 'international_number_id', label: 'International Number ID', tooltip: 'Unique identifier for the cyclone' },
+                                    { id: 'tropical_cyclone_number', label: 'Tropical Cyclone Number', tooltip: 'Cyclone number in the season' },
+                                    { id: 'tropical_cyclone_end_record', label: 'Tropical Cyclone End Record', tooltip: 'Record number at cyclone dissipation' },
+                                    { id: 'number_of_hours', label: 'Hours between Paths', tooltip: 'Time interval between observations (hours)' },
+                                    { id: 'grade', label: 'Grade', tooltip: 'Cyclone intensity grade (e.g., 1-5)' },
+                                    { id: 'latitude', label: 'Latitude', tooltip: 'Latitude of cyclone center (-90 to 90)' },
+                                    { id: 'longitude', label: 'Longitude', tooltip: 'Longitude of cyclone center (-180 to 180)' },
+                                    { id: 'minimum_central_pressure', label: 'Min Central Pressure', tooltip: 'Pressure at cyclone center (hPa)' }
+                                ].map(field => (
+                                    <div key={field.id} className="input-container relative mb-4 group">
+                                        <label htmlFor={field.id} className={`block font-medium mb-1 ${theme === 'night' ? 'text-gray-300' : 'text-blue-900'} transition-colors duration-300`}>
+                                            {field.label}
+                                            <span className="absolute invisible group-hover:visible bg-gray-900 text-white text-xs rounded py-1 px-2 -top-8 left-1/2 transform -translate-x-1/2 z-10">
+                                                {field.tooltip}
+                                            </span>
+                                        </label>
+                                        <div className="relative">
+                                            <svg className={`absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 ${theme === 'night' ? 'text-teal-400' : 'text-blue-800'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                            </svg>
+                                            <input
+                                                type="number"
+                                                step="any"
+                                                id={field.id}
+                                                name={field.id}
+                                                value={inputs[field.id]}
+                                                onChange={handleInputChange}
+                                                className={`w-full pl-10 p-3 border-2 ${theme === 'night' ? 'border-teal-500 bg-gray-800 text-gray-200' : 'border-blue-500 bg-white text-blue-900'} rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-400 transition-all duration-300`}
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+                                ))}
+                                <button
+                                    onClick={predict}
+                                    disabled={isLoading}
+                                    className={`w-full bg-gradient-to-r from-teal-400 to-blue-500 hover:from-blue-500 hover:to-teal-400 text-white py-3 rounded-lg shadow-md hover:shadow-xl transition-all duration-300 ${isLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
+                                >
+                                    {isLoading ? (
+                                        <span className="flex items-center justify-center">
+                                            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                            Predicting...
+                                        </span>
+                                    ) : 'Predict'}
+                                </button>
+                                <button
+                                    onClick={resetAll}
+                                    className="w-full mt-3 bg-gradient-to-r from-red-400 to-pink-500 hover:from-pink-500 hover:to-red-400 text-white py-3 rounded-lg shadow-md hover:shadow-xl transition-all duration-300"
+                                >
+                                    Reset All
+                                </button>
+                                {error && <p className={`text-center mt-4 ${theme === 'night' ? 'text-red-400' : 'text-red-600'} font-semibold`}>{error}</p>}
+                                {prediction && <p className={`text-center mt-4 font-bold ${theme === 'night' ? 'text-teal-400' : 'text-blue-800'}`}>{prediction}</p>}
+                            </div>
+                            <div className="panel p-8 rounded-2xl shadow-2xl">
+                                <h2 className={`text-2xl font-semibold mb-4 ${theme === 'night' ? 'text-teal-400' : 'text-blue-800'}`}>Cyclone Location</h2>
+                                <div id="map" ref={mapRef}></div>
+                                <div className="flex flex-wrap gap-4 mt-4 justify-center">
+                                    <select
+                                        value={mapLayer}
+                                        onChange={(e) => changeMapLayer(e.target.value)}
+                                        className={`p-3 border-2 ${theme === 'night' ? 'border-teal-500 bg-gray-800 text-gray-200' : 'border-blue-500 bg-white text-blue-900'} rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-400 transition-all duration-300`}
+                                    >
+                                        <option value="street">Street Map</option>
+                                        <option value="satellite">Satellite</option>
+                                        <option value="terrain">Terrain</option>
+                                    </select>
+                                    <button
+                                        onClick={toggleRiskZones}
+                                        className={`px-6 py-3 rounded-lg shadow-md hover:shadow-xl transition-all duration-300 ${showRiskZones ? 'bg-orange-500 hover:bg-orange-600' : 'bg-teal-500 hover:bg-teal-600'} text-white`}
+                                    >
+                                        {showRiskZones ? 'Hide Risk Zones' : 'Show Risk Zones'}
+                                    </button>
+                                    <button
+                                        onClick={toggleForecast}
+                                        className={`px-6 py-3 rounded-lg shadow-md hover:shadow-xl transition-all duration-300 ${showForecast ? 'bg-pink-500 hover:bg-pink-600' : 'bg-gray-500 hover:bg-gray-600'} text-white`}
+                                    >
+                                        {showForecast ? 'Hide Forecast Path' : 'Show Forecast Path'}
+                                    </button>
+                                    <button
+                                        onClick={zoomToLatestCyclone}
+                                        className="bg-gradient-to-r from-teal-400 to-blue-500 hover:from-blue-500 hover:to-teal-400 text-white px-6 py-3 rounded-lg shadow-md hover:shadow-xl transition-all duration-300"
+                                    >
+                                        Zoom to Latest
+                                    </button>
+                                    <button
+                                        onClick={animateCyclonePath}
+                                        className="bg-gradient-to-r from-teal-400 to-blue-500 hover:from-blue-500 hover:to-teal-400 text-white px-6 py-3 rounded-lg shadow-md hover:shadow-xl transition-all duration-300"
+                                    >
+                                        Animate Path
+                                    </button>
+                                </div>
+                                <p className={`text-center mt-4 ${theme === 'night' ? 'text-teal-400' : 'text-blue-800'}`}>{coords}</p>
+                                <p className={`text-center mt-2 ${theme === 'night' ? 'text-teal-400' : 'text-blue-800'}`}>{pathDistance}</p>
+                                {cycloneInfo.display && (
+                                    <div className={`mt-4 p-4 rounded-lg ${theme === 'night' ? 'bg-gray-800/80' : 'bg-blue-50/80'}`}>
+                                        <p className={`font-semibold ${theme === 'night' ? 'text-teal-400' : 'text-blue-800'}`}>Selected Cyclone</p>
+                                        <p className={theme === 'night' ? 'text-gray-200' : 'text-blue-900'}>Wind Speed: {cycloneInfo.windSpeed}</p>
+                                        <p className={theme === 'night' ? 'text-gray-200' : 'text-blue-900'}>Pressure: {cycloneInfo.pressure}</p>
+                                        <p className={theme === 'night' ? 'text-gray-200' : 'text-blue-900'}>Grade: {cycloneInfo.grade}</p>
+                                        <p className={theme === 'night' ? 'text-gray-200' : 'text-blue-900'}>Location: {cycloneInfo.location}</p>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="panel p-8 rounded-2xl shadow-2xl">
+                                <h2 className={`text-2xl font-semibold mb-4 ${theme === 'night' ? 'text-teal-400' : 'text-blue-800'}`}>Prediction Insights</h2>
+                                {currentWindSpeed > 0 && (
+                                    <WindGauge speed={currentWindSpeed} category={category} theme={theme} />
+                                )}
+                                {locationName && (
+                                    <div className={`text-center mb-6 p-3 rounded-lg border-l-4 ${theme === 'night' ? 'bg-gray-800 border-teal-500 text-teal-300' : 'bg-blue-50 border-blue-600 text-blue-900'}`}>
+                                        <p className="text-xs uppercase font-bold opacity-70">Likely Impact Area</p>
+                                        <p className="text-lg font-bold">{locationName}</p>
+                                    </div>
+                                )}
+                                
+                                {forecastData && forecastData.length > 0 && (
+                                    <div className="mb-8 p-4 rounded-xl border border-pink-500/30 bg-pink-500/5">
+                                        <div className="flex items-center mb-3">
+                                            <svg className="w-5 h-5 text-pink-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                                            </svg>
+                                            <h3 className={`text-lg font-bold ${theme === 'night' ? 'text-pink-400' : 'text-pink-800'}`}>Forecast Path (Seq2Seq)</h3>
+                                        </div>
+                                        <div className="overflow-hidden rounded-lg">
+                                            <table className="w-full text-xs text-left">
+                                                <thead className={theme === 'night' ? 'bg-gray-800 text-pink-300' : 'bg-pink-100 text-pink-800'}>
+                                                    <tr>
+                                                        <th className="px-3 py-2">Interval</th>
+                                                        <th className="px-3 py-2">Latitude</th>
+                                                        <th className="px-3 py-2">Longitude</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className={theme === 'night' ? 'text-gray-300' : 'text-gray-700'}>
+                                                    {forecastData.map(f => (
+                                                        <tr key={f.hours} className="border-b border-pink-500/10">
+                                                            <td className="px-3 py-2 font-bold">+{f.hours}h</td>
+                                                            <td className="px-3 py-2">{f.latitude}</td>
+                                                            <td className="px-3 py-2">{f.longitude}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                <div className="mb-6">
+                                    <h3 className={`text-lg font-medium ${theme === 'night' ? 'text-teal-400' : 'text-blue-800'}`}>Wind Speed Trend</h3>
+                                    <canvas id="windSpeedChart"></canvas>
+                                </div>
+                                <div className="mb-6">
+                                    <h3 className={`text-lg font-medium ${theme === 'night' ? 'text-teal-400' : 'text-blue-800'}`}>Pressure Comparison</h3>
+                                    <canvas id="pressureChart"></canvas>
+                                </div>
+                                <button
+                                    onClick={downloadReport}
+                                    className="w-full bg-gradient-to-r from-green-400 to-lime-500 hover:from-lime-500 hover:to-green-400 text-white py-3 rounded-lg shadow-md hover:shadow-xl transition-all duration-300"
+                                >
+                                    Download Report
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        ReactDOM.render(<CycloneDashboard />, document.getElementById('root'));
+    {% endverbatim %}
+    </script>
+</body>
+</html>
